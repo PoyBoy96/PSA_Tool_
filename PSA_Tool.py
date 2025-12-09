@@ -171,10 +171,16 @@ def run_gui():
     ttk.Label(rs_card, text="RS Segments (MOV + WAV copy)", style="Heading.TLabel").pack(anchor="w", pady=(0, BASE_PAD))
 
     search_var = tk.StringVar()
-    ttk.Entry(rs_card, textvariable=search_var, width=40, style="App.TEntry").pack(anchor="w", pady=(0, BASE_PAD))
+    rs_search_row = ttk.Frame(rs_card, style="Card.TFrame")
+    rs_search_row.pack(fill="x", pady=(0, BASE_PAD))
+    ttk.Entry(rs_search_row, textvariable=search_var, width=40, style="App.TEntry").pack(side="left", fill="x", expand=True)
+    ttk.Button(rs_search_row, text="Clear Selection", command=lambda: clear_rs_selection(), style="TButton").pack(side="right", padx=(BASE_PAD, 0))
 
-    rs_frame = tk.Frame(rs_card, bg=COLOR_CARD)
-    rs_frame.pack(fill="both", expand=True)
+    rs_content_row = ttk.Frame(rs_card, style="Card.TFrame")
+    rs_content_row.pack(fill="both", expand=True)
+
+    rs_frame = tk.Frame(rs_content_row, bg=COLOR_CARD)
+    rs_frame.pack(side="left", fill="both", expand=True)
 
     rs_canvas = tk.Canvas(rs_frame, bg=COLOR_CARD, highlightthickness=0)
     rs_canvas.pack(side="left", fill="both", expand=True)
@@ -191,10 +197,24 @@ def run_gui():
     enable_mousewheel(list_frame, rs_canvas)
 
     rs_selected_set = set()
+    rs_checkbuttons = []
+    rs_selected_display_var = tk.StringVar(value="(none)")
+
+    rs_selected_box = ttk.Frame(rs_content_row, style="Card.TFrame", width=220)
+    rs_selected_box.pack(side="right", fill="y", padx=(BASE_PAD, 0))
+    ttk.Label(rs_selected_box, text="Selected RS clips:", style="Card.TLabel").pack(anchor="w")
+    ttk.Label(rs_selected_box, textvariable=rs_selected_display_var, style="Card.TLabel", justify="left").pack(anchor="w", pady=(BASE_PAD // 2, 0))
+
+    def update_rs_selected_display():
+        if not rs_selected_set:
+            rs_selected_display_var.set("(none)")
+            return
+        rs_selected_display_var.set("\n".join(sorted(rs_selected_set)))
 
     def load_file_list(filter_text=""):
         for widget in list_frame.winfo_children():
             widget.destroy()
+        rs_checkbuttons.clear()
 
         source_path = source_var.get()
         if not os.path.isdir(source_path):
@@ -215,6 +235,7 @@ def run_gui():
                         rs_selected_set.add(n)
                     else:
                         rs_selected_set.discard(n)
+                    update_rs_selected_display()
 
                 chk = tk.Checkbutton(
                     list_frame,
@@ -230,6 +251,15 @@ def run_gui():
                 chk.var = var
                 chk.name = item
                 chk.pack(anchor="w", pady=2)
+                rs_checkbuttons.append(chk)
+
+        update_rs_selected_display()
+
+    def clear_rs_selection():
+        rs_selected_set.clear()
+        for chk in rs_checkbuttons:
+            chk.var.set(False)
+        update_rs_selected_display()
 
     load_file_list()
     search_var.trace_add("write", lambda *args: load_file_list(search_var.get()))
@@ -241,7 +271,10 @@ def run_gui():
     ttk.Label(ms_card, text="MS Segments (MP4 stitch)", style="Heading.TLabel").pack(anchor="w", pady=(0, BASE_PAD))
 
     ms_search_var = tk.StringVar()
-    ttk.Entry(ms_card, textvariable=ms_search_var, width=40, style="App.TEntry").pack(anchor="w", pady=(0, BASE_PAD))
+    ms_search_row = ttk.Frame(ms_card, style="Card.TFrame")
+    ms_search_row.pack(fill="x", pady=(0, BASE_PAD))
+    ttk.Entry(ms_search_row, textvariable=ms_search_var, width=40, style="App.TEntry").pack(side="left", fill="x", expand=True)
+    ttk.Button(ms_search_row, text="Clear Selection", command=lambda: clear_ms_selection(), style="TButton").pack(side="right", padx=(BASE_PAD, 0))
 
     ms_frame = tk.Frame(ms_card, bg=COLOR_CARD)
     ms_frame.pack(fill="both", expand=True)
@@ -262,9 +295,17 @@ def run_gui():
 
     ms_selection_order = []
     ms_selected_set = set()
+    ms_checkbuttons = []
+    ms_variants = []  # each: {"name_var": StringVar, "order": list}
+    ms_add_target_idx = None
     ms_order_label_var = tk.StringVar(value="Order: (none)")
 
     def update_ms_order_label():
+        if ms_add_target_idx is not None and ms_add_target_idx < len(ms_variants):
+            target_name = ms_variants[ms_add_target_idx]["name_var"].get().strip() or "MS"
+            detail = " -> ".join(ms_selection_order) if ms_selection_order else "(select clips)"
+            ms_order_label_var.set(f"Add to {target_name}: {detail}")
+            return
         if not ms_selection_order:
             ms_order_label_var.set("Order: (none)")
         else:
@@ -281,9 +322,156 @@ def run_gui():
             ms_selected_set.discard(name)
         update_ms_order_label()
 
+    def clear_ms_selection():
+        ms_selection_order.clear()
+        ms_selected_set.clear()
+        for chk in ms_checkbuttons:
+            chk.var.set(False)
+        update_ms_order_label()
+
+    def add_ms_variant():
+        nonlocal ms_add_target_idx
+        if not ms_selection_order:
+            messagebox.showerror("Error", "Select clips and order them before creating a version.")
+            return
+        name_var = tk.StringVar(value="MS")
+        variant = {"name_var": name_var, "order": list(ms_selection_order)}
+        ms_variants.append(variant)
+        clear_ms_selection()
+        ms_add_target_idx = None
+        render_ms_variants()
+
+    def duplicate_ms_variant(idx):
+        if idx < 0 or idx >= len(ms_variants):
+            return
+        src = ms_variants[idx]
+        name_copy = tk.StringVar(value=src["name_var"].get())
+        copy_variant = {"name_var": name_copy, "order": list(src["order"])}
+        ms_variants.insert(idx + 1, copy_variant)
+        render_ms_variants()
+
+    def delete_ms_variant(idx):
+        nonlocal ms_add_target_idx
+        if idx < 0 or idx >= len(ms_variants):
+            return
+        del ms_variants[idx]
+        if ms_add_target_idx == idx:
+            ms_add_target_idx = None
+            clear_ms_selection()
+        elif ms_add_target_idx is not None and ms_add_target_idx > idx:
+            ms_add_target_idx -= 1
+        render_ms_variants()
+
+    def start_or_finish_add(idx):
+        nonlocal ms_add_target_idx
+        if idx < 0 or idx >= len(ms_variants):
+            return
+        if ms_add_target_idx == idx:
+            # Finish add mode: append current selection to variant order
+            if ms_selection_order:
+                ms_variants[idx]["order"].extend(ms_selection_order)
+            clear_ms_selection()
+            ms_add_target_idx = None
+            render_ms_variants()
+            return
+        # Switch to add mode for this variant
+        clear_ms_selection()
+        ms_add_target_idx = idx
+        render_ms_variants()
+        update_ms_order_label()
+
+    def edit_ms_variant_order(idx):
+        if idx < 0 or idx >= len(ms_variants):
+            return
+        variant = ms_variants[idx]
+
+        win = tk.Toplevel(root)
+        win.title("Edit Order")
+        win.geometry("400x400")
+        win.configure(bg=COLOR_BG)
+
+        tk.Label(win, text="Drag to reorder; select and Remove to drop clips.", bg=COLOR_BG, fg=COLOR_TEXT).pack(anchor="w", padx=BASE_PAD, pady=(BASE_PAD // 2, BASE_PAD // 2))
+
+        lb = tk.Listbox(win, selectmode="browse", activestyle="none")
+        lb.pack(fill="both", expand=True, padx=BASE_PAD, pady=(0, BASE_PAD))
+        for item in variant["order"]:
+            lb.insert("end", item)
+
+        drag_data = {"index": None}
+
+        def on_start(event):
+            drag_data["index"] = lb.nearest(event.y)
+
+        def on_drag(event):
+            if drag_data["index"] is None:
+                return
+            new_index = lb.nearest(event.y)
+            if new_index == drag_data["index"]:
+                return
+            item_text = lb.get(drag_data["index"])
+            lb.delete(drag_data["index"])
+            lb.insert(new_index, item_text)
+            drag_data["index"] = new_index
+
+        lb.bind("<Button-1>", on_start)
+        lb.bind("<B1-Motion>", on_drag)
+
+        btn_row = ttk.Frame(win, style="App.TFrame")
+        btn_row.pack(fill="x", padx=BASE_PAD, pady=(0, BASE_PAD))
+
+        def remove_selected():
+            sel = lb.curselection()
+            if sel:
+                lb.delete(sel[0])
+
+        ttk.Button(btn_row, text="Move Up", command=lambda: move_selection(-1)).pack(side="left", padx=(0, BASE_PAD))
+        ttk.Button(btn_row, text="Move Down", command=lambda: move_selection(1)).pack(side="left", padx=(0, BASE_PAD))
+        ttk.Button(btn_row, text="Remove", command=remove_selected).pack(side="left")
+
+        def move_selection(delta):
+            sel = lb.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            new_idx = idx + delta
+            if new_idx < 0 or new_idx >= lb.size():
+                return
+            item_text = lb.get(idx)
+            lb.delete(idx)
+            lb.insert(new_idx, item_text)
+            lb.selection_set(new_idx)
+
+        def save_and_close():
+            variant["order"] = list(lb.get(0, "end"))
+            render_ms_variants()
+            win.destroy()
+
+        ttk.Button(win, text="Save", style="Accent.TButton", command=save_and_close).pack(pady=(0, BASE_PAD))
+
+    def render_ms_variants():
+        for widget in ms_variants_frame.winfo_children():
+            widget.destroy()
+
+        for idx, variant in enumerate(ms_variants):
+            row = ttk.Frame(ms_variants_frame, style="Card.TFrame")
+            row.pack(fill="x", pady=(0, BASE_PAD // 2))
+
+            ttk.Label(row, text="Campus/Version:", style="Card.TLabel").pack(side="left")
+            ttk.Entry(row, textvariable=variant["name_var"], width=18, style="App.TEntry").pack(side="left", padx=(BASE_PAD // 2, BASE_PAD))
+
+            summary = " -> ".join(variant["order"]) if variant["order"] else "(none)"
+            ttk.Label(row, text=summary, style="Card.TLabel", foreground=COLOR_MUTED).pack(side="left", expand=True, fill="x")
+
+            add_btn_text = "Done" if ms_add_target_idx == idx else "Add Clips"
+            ttk.Button(row, text=add_btn_text, command=lambda i=idx: start_or_finish_add(i), style="TButton").pack(side="right", padx=(BASE_PAD // 2, 0))
+            ttk.Button(row, text="Edit Order", command=lambda i=idx: edit_ms_variant_order(i), style="TButton").pack(side="right", padx=(BASE_PAD // 2, 0))
+            ttk.Button(row, text="Duplicate", command=lambda i=idx: duplicate_ms_variant(i), style="TButton").pack(side="right", padx=(BASE_PAD // 2, 0))
+            ttk.Button(row, text="Delete", command=lambda i=idx: delete_ms_variant(i), style="TButton").pack(side="right")
+
     def load_ms_list(filter_text=""):
         for widget in ms_list_frame.winfo_children():
             widget.destroy()
+        ms_checkbuttons.clear()
 
         source_path = source_var.get()
         source_ms = os.path.join(source_path, "MS")
@@ -315,6 +503,7 @@ def run_gui():
                 chk.var = var
                 chk.name = item
                 chk.pack(anchor="w", pady=2)
+                ms_checkbuttons.append(chk)
         update_ms_order_label()
 
     load_ms_list()
@@ -324,8 +513,12 @@ def run_gui():
         refresh_dest_options()
         load_file_list(search_var.get())
         load_ms_list(ms_search_var.get())
+        render_ms_variants()
 
-    ttk.Label(ms_card, textvariable=ms_order_label_var, style="Card.TLabel", foreground=COLOR_MUTED).pack(fill="x", pady=(BASE_PAD // 2, BASE_PAD))
+    order_row = ttk.Frame(ms_card, style="Card.TFrame")
+    order_row.pack(fill="x", pady=(BASE_PAD // 2, BASE_PAD))
+    ttk.Label(order_row, textvariable=ms_order_label_var, style="Card.TLabel", foreground=COLOR_MUTED).pack(side="left", fill="x", expand=True)
+    ttk.Button(order_row, text="New Version", command=add_ms_variant, style="TButton").pack(side="right", padx=(BASE_PAD, 0))
 
     name_frame = ttk.Frame(ms_card, style="Card.TFrame")
     name_frame.pack(fill="x", pady=(0, BASE_PAD))
@@ -349,6 +542,10 @@ def run_gui():
     refresh_filename()
 
     ttk.Label(ms_card, textvariable=ms_filename_var, style="Card.TLabel", foreground=COLOR_MUTED).pack(anchor="w", pady=(0, BASE_PAD))
+
+    ttk.Label(ms_card, text="Versions:", style="Heading.TLabel").pack(anchor="w", pady=(0, BASE_PAD // 2))
+    ms_variants_frame = ttk.Frame(ms_card, style="Card.TFrame")
+    ms_variants_frame.pack(fill="x", pady=(0, BASE_PAD))
 
     # ---------- DESTINATION + ACTION (BOTTOM) ----------
     ttk.Label(container, text="Destination Folder (full path):", style="App.TLabel").pack(anchor="w", pady=(BASE_PAD, BASE_PAD // 2))
@@ -482,6 +679,7 @@ def run_gui():
         any_work = False
         rs_selected = list(rs_selected_set)
         ms_selected = list(ms_selection_order)
+        ms_variant_targets = ms_variants if ms_variants else [{"name_var": tk.StringVar(value="MS"), "order": ms_selected}]
 
         try:
             build_folder_structure(dest)
@@ -504,21 +702,26 @@ def run_gui():
 
         # MS stitch
         try:
-            if ms_selected:
+            if ms_variant_targets and any(v["order"] for v in ms_variant_targets):
                 if not os.path.isdir(os.path.join(source, "MS")):
                     messagebox.showerror("Error", "MS folder not found under source path.")
                     return
 
-                filename = build_ms_filename(date_var.get(), initials_var.get())
-                if not filename:
-                    messagebox.showerror("Error", "Enter both date and initials for the output name.")
-                    return
-
-                any_work = True
-                log("Stitching MS clips...")
                 ffmpeg_path = ensure_ffmpeg(app_config.get("ffmpeg_names", []), app_config.get("ffmpeg_download_url", ""))
-                output_path = stitch_ms_files(dest, ms_selected, source, filename, ffmpeg_path)
-                log(f"MS stitch complete: {output_path}")
+                for variant in ms_variant_targets:
+                    order_list = variant["order"]
+                    if not order_list:
+                        continue
+                    name_token = variant["name_var"].get().strip() or "MS"
+                    base_filename = build_ms_filename(date_var.get(), initials_var.get())
+                    if not base_filename:
+                        messagebox.showerror("Error", "Enter both date and initials for the output name.")
+                        return
+                    filename = base_filename.replace("_MS_", f"_{name_token}_")
+                    any_work = True
+                    log(f"Stitching MS clips ({name_token})...")
+                    output_path = stitch_ms_files(dest, order_list, source, filename, ffmpeg_path)
+                    log(f"MS stitch complete: {output_path}")
                 set_progress(80)
         except Exception as e:
             log(f"MS stitch failed: {e}")
