@@ -59,8 +59,16 @@ def stitch_ms_files(dest: str, ordered_names: List[str], source: str, output_fil
         "0",
         "-i",
         list_path,
-        "-c",
-        "copy",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
         output_path,
     ]
 
