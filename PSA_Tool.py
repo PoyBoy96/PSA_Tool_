@@ -168,7 +168,10 @@ def run_gui():
     rs_card = ttk.Frame(container, style="Card.TFrame", padding=BASE_PAD * 2)
     rs_card.pack(fill="x", expand=False, pady=(0, BASE_PAD * 2))
 
-    ttk.Label(rs_card, text="RS Segments (MOV + WAV copy)", style="Heading.TLabel").pack(anchor="w", pady=(0, BASE_PAD))
+    rs_header = ttk.Frame(rs_card, style="Card.TFrame")
+    rs_header.pack(fill="x", pady=(0, BASE_PAD))
+    ttk.Label(rs_header, text="RS Segments (MOV + WAV copy)", style="Heading.TLabel").pack(side="left")
+    ttk.Button(rs_header, text="Refresh Segments", command=lambda: refresh_all_lists(), style="TButton").pack(side="right")
 
     search_var = tk.StringVar()
     rs_search_row = ttk.Frame(rs_card, style="Card.TFrame")
@@ -509,11 +512,69 @@ def run_gui():
     load_ms_list()
     ms_search_var.trace_add("write", lambda *args: load_ms_list(ms_search_var.get()))
 
+    def _list_rs_items():
+        source_path = source_var.get()
+        if not os.path.isdir(source_path):
+            return None
+        return sorted([f[:-4] for f in os.listdir(source_path) if f.lower().endswith(".mov")])
+
+    def _list_ms_items():
+        source_path = source_var.get()
+        source_ms = os.path.join(source_path, "MS")
+        if not os.path.isdir(source_ms):
+            return None
+        return sorted([f[:-4] for f in os.listdir(source_ms) if f.lower().endswith(".mp4")])
+
+    def _prune_missing_selections():
+        missing_sections = []
+
+        rs_items = _list_rs_items()
+        if rs_items is not None:
+            rs_available = set(rs_items)
+            missing_rs = sorted(rs_selected_set - rs_available)
+            if missing_rs:
+                rs_selected_set.difference_update(missing_rs)
+                missing_sections.append(("RS selections removed", missing_rs))
+
+        ms_items = _list_ms_items()
+        if ms_items is not None:
+            ms_available = set(ms_items)
+            missing_ms = [name for name in ms_selection_order if name not in ms_available]
+            if missing_ms:
+                ms_selection_order[:] = [name for name in ms_selection_order if name in ms_available]
+                ms_selected_set.intersection_update(ms_available)
+                missing_sections.append(("MS selection removed", missing_ms))
+
+            missing_variant_lines = []
+            for variant in ms_variants:
+                missing_variant = [name for name in variant["order"] if name not in ms_available]
+                if missing_variant:
+                    variant["order"] = [name for name in variant["order"] if name in ms_available]
+                    variant_name = variant["name_var"].get().strip() or "MS"
+                    missing_variant_lines.append(f"{variant_name}: {', '.join(missing_variant)}")
+            if missing_variant_lines:
+                missing_sections.append(("MS versions missing clips", missing_variant_lines))
+
+        return missing_sections
+
     def refresh_all_lists():
+        missing_sections = _prune_missing_selections()
         refresh_dest_options()
         load_file_list(search_var.get())
         load_ms_list(ms_search_var.get())
         render_ms_variants()
+        if missing_sections:
+            lines = ["Some selected clips were missing after refresh and were removed:"]
+            for title, items in missing_sections:
+                if not items:
+                    continue
+                if title == "MS versions missing clips":
+                    lines.append(f"{title}:")
+                    for entry in items:
+                        lines.append(f"- {entry}")
+                else:
+                    lines.append(f"{title}: {', '.join(items)}")
+            messagebox.showwarning("Missing Clips", "\n".join(lines))
 
     order_row = ttk.Frame(ms_card, style="Card.TFrame")
     order_row.pack(fill="x", pady=(BASE_PAD // 2, BASE_PAD))
