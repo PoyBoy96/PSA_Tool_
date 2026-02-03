@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -54,6 +55,16 @@ def normalize_path(value: str) -> str:
         # Promote single leading slash to UNC-style double
         return "\\\\" + value.lstrip("\\")
     return value
+
+
+_OFF_WEEK_PATTERN = re.compile(r"\boff[\s_-]*(week|wk)s?\b", re.IGNORECASE)
+
+
+def is_off_week_folder(name: str) -> bool:
+    """Return True when the destination folder name indicates an off week."""
+    if not name:
+        return False
+    return _OFF_WEEK_PATTERN.search(name) is not None
 
 
 # ---------------------------------------------------------
@@ -652,8 +663,11 @@ def run_gui():
         if not (root_path and choice):
             dest_path_var.set("")
             return
-        week_folder = f"Week {week}" if week else ""
-        full = os.path.join(root_path, choice, week_folder) if week_folder else os.path.join(root_path, choice)
+        if is_off_week_folder(choice):
+            full = os.path.join(root_path, choice)
+        else:
+            week_folder = f"Week {week}" if week else ""
+            full = os.path.join(root_path, choice, week_folder) if week_folder else os.path.join(root_path, choice)
         dest_path_var.set(normalize_path(full))
 
     def refresh_dest_options():
@@ -708,16 +722,6 @@ def run_gui():
         log_text.delete("1.0", "end")
         log_text.config(state="disabled")
 
-        week_text = week_var.get().strip()
-        if not week_text:
-            messagebox.showerror("Error", "Please enter a week number.")
-            return
-        try:
-            int(week_text)
-        except ValueError:
-            messagebox.showerror("Error", "Week must be a number.")
-            return
-
         root_path = dest_root_var.get().strip()
         choice = dest_var.get().strip()
         if not root_path or not os.path.isdir(root_path):
@@ -727,9 +731,24 @@ def run_gui():
             messagebox.showerror("Error", "Select a destination folder inside the root.")
             return
 
-        week_name = f"Week {week_text}"
-        dest = os.path.join(root_path, choice, week_name)
-        dest_path_var.set(dest)
+        off_week = is_off_week_folder(choice)
+        week_text = week_var.get().strip()
+        if not off_week:
+            if not week_text:
+                messagebox.showerror("Error", "Please enter a week number.")
+                return
+            try:
+                int(week_text)
+            except ValueError:
+                messagebox.showerror("Error", "Week must be a number.")
+                return
+
+        if off_week:
+            dest = os.path.join(root_path, choice)
+        else:
+            week_name = f"Week {week_text}"
+            dest = os.path.join(root_path, choice, week_name)
+        dest_path_var.set(normalize_path(dest))
 
         try:
             os.makedirs(dest, exist_ok=True)

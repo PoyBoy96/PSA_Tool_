@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['PSA_tool.py'],
+    ['PSA_Tool.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,18 +22,17 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PSA_tool',
+    name='PSA_Tool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='NONE',
 )
