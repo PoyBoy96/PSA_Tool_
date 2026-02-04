@@ -30,6 +30,8 @@ jobs:
       - name: Prepare release metadata
         id: meta
         shell: python
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           import json
           import os
@@ -108,6 +110,8 @@ jobs:
           name: ${{ steps.meta.outputs.tag }}
           target_commitish: ${{ github.sha }}
           body: ${{ steps.meta.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release (auto notes)
         if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.has_notes != 'true'
@@ -118,3 +122,5 @@ jobs:
           name: ${{ steps.meta.outputs.tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
