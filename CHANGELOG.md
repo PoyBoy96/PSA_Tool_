@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.6
+- Fix auto-update script launch
+
 ## 1.2.5
 - Improve in-app updater reliability and logging
 
