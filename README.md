@@ -82,7 +82,7 @@ Release steps:
    git commit -m "Release v1.2.1"
    git push
    ```
-4. GitHub Actions will **auto‑tag** based on `version.py`, then build and publish the release.
+4. GitHub Actions will build and publish the release automatically based on `version.py`.
 
 ### Optional: Auto Bump Version + Changelog
 Use the helper script to bump versions and insert a new changelog section.

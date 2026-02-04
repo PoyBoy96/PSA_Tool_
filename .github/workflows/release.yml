@@ -2,18 +2,20 @@ name: Build and Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,57 +27,94 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller pillow
 
-      - name: Build exe
-        run: |
-          pyinstaller --clean PSA_Tool.spec
-
-      - name: Extract release notes
-        id: notes
+      - name: Prepare release metadata
+        id: meta
         shell: python
         run: |
+          import json
           import os
           import re
+          import urllib.request
+          import urllib.error
           from pathlib import Path
 
-          tag = os.environ.get("GITHUB_REF_NAME", "")
-          version = tag.lstrip("v")
-          changelog = Path("CHANGELOG.md")
           output_path = os.environ["GITHUB_OUTPUT"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
 
-          if not changelog.exists() or not version:
-              with open(output_path, "a", encoding="utf-8") as f:
-                  f.write("has_notes=false\n")
-              raise SystemExit(0)
-
-          text = changelog.read_text(encoding="utf-8")
-          pattern = re.compile(rf"^##\\s+{re.escape(version)}\\s*$", re.MULTILINE)
-          match = pattern.search(text)
+          version_text = Path("version.py").read_text(encoding="utf-8")
+          match = re.search(r'__version__\s*=\s*"([^"]+)"', version_text)
           if not match:
+              raise SystemExit("Could not find __version__ in version.py")
+          version = match.group(1).strip()
+          tag = f"v{version}"
+
+          release_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+          headers = {
+              "Authorization": f"token {token}",
+              "User-Agent": "PSA-Tool",
+          }
+          exists = False
+          try:
+              req = urllib.request.Request(release_url, headers=headers)
+              with urllib.request.urlopen(req, timeout=8) as resp:
+                  exists = resp.status == 200
+          except urllib.error.HTTPError as err:
+              if err.code != 404:
+                  raise
+          except Exception:
+              pass
+
+          if exists:
               with open(output_path, "a", encoding="utf-8") as f:
-                  f.write("has_notes=false\n")
+                  f.write("should_release=false\n")
               raise SystemExit(0)
 
-          start = match.end()
-          next_match = re.search(r"^##\\s+", text[start:], re.MULTILINE)
-          end = start + next_match.start() if next_match else len(text)
-          body = text[start:end].strip()
+          changelog = Path("CHANGELOG.md")
+          has_notes = False
+          body = ""
+          if changelog.exists():
+              text = changelog.read_text(encoding="utf-8")
+              pattern = re.compile(rf"^##\\s+{re.escape(version)}\\s*$", re.MULTILINE)
+              match = pattern.search(text)
+              if match:
+                  start = match.end()
+                  next_match = re.search(r"^##\\s+", text[start:], re.MULTILINE)
+                  end = start + next_match.start() if next_match else len(text)
+                  body = text[start:end].strip()
+                  if body:
+                      has_notes = True
 
           with open(output_path, "a", encoding="utf-8") as f:
-              f.write("has_notes=true\n")
+              f.write("should_release=true\n")
+              f.write(f"tag={tag}\n")
+              f.write(f"version={version}\n")
+              f.write(f"has_notes={'true' if has_notes else 'false'}\n")
               f.write("body<<EOF\n")
               f.write(body + "\n")
               f.write("EOF\n")
 
+      - name: Build exe
+        if: steps.meta.outputs.should_release == 'true'
+        run: |
+          pyinstaller --clean PSA_Tool.spec
+
       - name: Create GitHub Release (changelog notes)
-        if: steps.notes.outputs.has_notes == 'true'
+        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.has_notes == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/PSA_Tool.exe
-          body: ${{ steps.notes.outputs.body }}
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body: ${{ steps.meta.outputs.body }}
 
       - name: Create GitHub Release (auto notes)
-        if: steps.notes.outputs.has_notes != 'true'
+        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.has_notes != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/PSA_Tool.exe
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
