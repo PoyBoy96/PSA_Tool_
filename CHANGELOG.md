@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.3
+- Update check test
+
 ## 1.2.2
 - Patch release.
 
