@@ -454,6 +454,7 @@ def run_gui():
             progress.pack(fill="x", padx=BASE_PAD, pady=(0, BASE_PAD))
 
             tmp_path = target_dir / f"{exe_path.stem}.new"
+            log_path = target_dir / "update_log.txt"
             pid = os.getpid()
 
             def _progress(downloaded, total):
@@ -474,8 +475,14 @@ def run_gui():
                     root.after(0, _fail)
                     return
 
+                def _installing():
+                    status_var.set("Installing update...")
+                root.after(0, _installing)
+
                 updater_path = target_dir / "update_app.cmd"
                 script = f"""@echo off
+set LOG="{log_path}"
+echo Starting update... > %LOG%
 set PID={pid}
 set NEW="{tmp_path}"
 set EXE="{exe_path}"
@@ -485,8 +492,11 @@ if not errorlevel 1 (
   timeout /t 1 /nobreak >nul
   goto wait
 )
-move /y %NEW% %EXE% >nul
+echo Replacing exe... >> %LOG%
+move /y %NEW% %EXE% >> %LOG% 2>&1
+echo Launching new exe... >> %LOG%
 start "" %EXE%
+echo Update complete. >> %LOG%
 del "%~f0"
 """
                 try:
@@ -512,7 +522,12 @@ del "%~f0"
                     root.after(0, _fail)
                     return
 
-                root.after(0, root.destroy)
+                def _exit_app():
+                    try:
+                        root.destroy()
+                    finally:
+                        os._exit(0)
+                root.after(200, _exit_app)
 
             threading.Thread(target=_download_worker, daemon=True).start()
 
