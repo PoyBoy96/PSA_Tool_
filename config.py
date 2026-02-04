@@ -7,11 +7,13 @@ CONFIG_FILENAME = "psa_config.json"
 
 DEFAULT_CONFIG = {
     "settings_file": "psa_tool_settings.json",
-    "default_source": r"\\\\\\\\sbcreative\\ActiveProjects\\ADULTS\\_2025\\PSAs_OUTROs\\PSAs\\EXPORTS_FINAL\\Segments",
-    "default_dest_root": r"\\\\\\\\sccserver\\Production Event Media\\Sermon Series",
+    "default_source": r"C:\\PSA_Tool\\Source",
+    "default_dest_root": r"C:\\PSA_Tool\\Destination",
     "logo_path": "Sagebrush.png",
     "ffmpeg_names": ["ffmpeg.exe", "ffmpeg"],
     "ffmpeg_download_url": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "update_repo": "PoyBoy96/PSA_Tool_",
+    "update_token_file": "update_token.txt",
 }
 
 

@@ -4,6 +4,9 @@ import queue
 import re
 import threading
 import sys
+import urllib.request
+import urllib.error
+import webbrowser
 from pathlib import Path
 from datetime import datetime, timedelta
 import tkinter as tk
@@ -13,6 +16,7 @@ from PIL import Image, ImageTk
 
 from assets import load_logo_image, load_logo_pil_image
 from config import base_dir, load_config
+from version import __version__
 from ffmpeg_utils import ensure_ffmpeg
 from file_ops import build_folder_structure, copy_selected_files, stitch_ms_files
 from settings_manager import load_settings, save_settings
@@ -57,6 +61,45 @@ def apply_variant_name(base_filename: str, name_token: str) -> str:
     root, ext = os.path.splitext(base_filename)
     ext = ext or ".mp4"
     return f"{root}_{token}{ext}"
+
+
+def _parse_version(value: str):
+    if not value:
+        return ()
+    value = value.strip()
+    if value.lower().startswith("v"):
+        value = value[1:]
+    parts = re.split(r"[^0-9]+", value)
+    return tuple(int(p) for p in parts if p)
+
+
+def _is_newer(remote, local):
+    max_len = max(len(remote), len(local))
+    remote = remote + (0,) * (max_len - len(remote))
+    local = local + (0,) * (max_len - len(local))
+    return remote > local
+
+
+def load_update_token(app_config):
+    env_token = os.getenv("PSA_TOOL_GITHUB_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    token_file = app_config.get("update_token_file", "").strip()
+    if not token_file:
+        return ""
+    candidate_paths = [base_dir() / token_file]
+    if getattr(sys, "_MEIPASS", None):
+        candidate_paths.append(Path(sys._MEIPASS) / token_file)
+
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            continue
+    return ""
 
 
 def next_saturday_mmdd():
@@ -263,13 +306,51 @@ def run_gui():
     settings = load_settings(app_config)
 
     root = tk.Tk()
-    root.title("PSA File Drop Utility")
+    root.title(f"PSA File Drop Utility v{__version__}")
     root.geometry("900x1000")
     root.configure(bg=COLOR_BG)
 
     apply_styles(root)
     style = ttk.Style(root)
     style.configure("Blue.Horizontal.TProgressbar", background=COLOR_ACCENT, troughcolor=COLOR_CARD)
+
+    def check_for_updates_async():
+        repo = app_config.get("update_repo", "").strip()
+        if not repo:
+            return
+
+        def _worker():
+            token = load_update_token(app_config)
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
+            headers = {"User-Agent": "PSA-Tool"}
+            if token:
+                headers["Authorization"] = f"token {token}"
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+            except Exception:
+                return
+
+            tag = data.get("tag_name", "")
+            remote = _parse_version(tag)
+            local = _parse_version(__version__)
+            if not remote or not local or not _is_newer(remote, local):
+                return
+
+            html_url = data.get("html_url") or f"https://github.com/{repo}/releases/latest"
+
+            def _notify():
+                msg = f"Update available: {tag}\nCurrent version: {__version__}\n\nOpen the download page now?"
+                if messagebox.askyesno("Update Available", msg):
+                    try:
+                        webbrowser.open(html_url)
+                    except Exception:
+                        messagebox.showerror("Error", "Could not open the download page.")
+
+            root.after(0, _notify)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     outer = ttk.Frame(root, style="App.TFrame", padding=0)
     outer.pack(fill="both", expand=True)
@@ -1119,6 +1200,7 @@ def run_gui():
 
     open_btn.config(command=open_destination_folder)
     refresh_dest_options()
+    check_for_updates_async()
 
     root.mainloop()
 
