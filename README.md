@@ -86,7 +86,26 @@ Release steps:
    git tag v1.2.1
    git push --follow-tags
    ```
-5. Create a GitHub Release from the tag and upload `dist\PSA_Tool.exe`.
+5. GitHub Actions will build and publish the release automatically when you push the tag.
+
+### Optional: Auto Bump Version + Changelog
+Use the helper script to bump versions and insert a new changelog section.
+
+```powershell
+python scripts/bump_version.py patch --note "Fix small issue"
+```
+
+Other examples:
+```powershell
+python scripts/bump_version.py minor --note "Add new feature"
+python scripts/bump_version.py major --note "Big overhaul"
+python scripts/bump_version.py --set 2.1.0 --note "Manual set"
+```
+
+Skip changelog edits:
+```powershell
+python scripts/bump_version.py patch --no-changelog
+```
 
 ## Packaging (Optional)
 1. Install PyInstaller:

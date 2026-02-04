@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.1
+- App now checks GitHub Releases for update notifications.
+
 ## 1.2.0
 - UI remains responsive during ffmpeg operations.
 - Animated status indicator with PNG sequence.
