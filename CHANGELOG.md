@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.4
+- In-app auto-update with release notes and in-place install
+
 ## 1.2.3
 - Update check test
 
