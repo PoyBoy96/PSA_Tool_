@@ -102,6 +102,55 @@ def load_update_token(app_config):
     return ""
 
 
+def fetch_latest_release(repo: str, token: str):
+    if not repo:
+        return None
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    headers = {"User-Agent": "PSA-Tool"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    tag = data.get("tag_name", "")
+    body = data.get("body", "") or ""
+    html_url = data.get("html_url") or f"https://github.com/{repo}/releases/latest"
+    assets = data.get("assets", []) or []
+    asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".exe")), None)
+    download_url = asset.get("browser_download_url") if asset else None
+    size = asset.get("size") if asset else None
+    return {
+        "tag": tag,
+        "body": body,
+        "html_url": html_url,
+        "download_url": download_url,
+        "size": size,
+    }
+
+
+def download_file(url: str, dest_path: Path, token: str, on_progress=None):
+    headers = {"User-Agent": "PSA-Tool"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as resp, open(dest_path, "wb") as out:
+        total = resp.headers.get("Content-Length")
+        total = int(total) if total and total.isdigit() else None
+        downloaded = 0
+        while True:
+            chunk = resp.read(1024 * 256)
+            if not chunk:
+                break
+            out.write(chunk)
+            downloaded += len(chunk)
+            if on_progress:
+                on_progress(downloaded, total)
+
+
 def next_saturday_mmdd():
     today = datetime.today()
     days_ahead = (5 - today.weekday()) % 7
@@ -321,36 +370,158 @@ def run_gui():
 
         def _worker():
             token = load_update_token(app_config)
-            url = f"https://api.github.com/repos/{repo}/releases/latest"
-            headers = {"User-Agent": "PSA-Tool"}
-            if token:
-                headers["Authorization"] = f"token {token}"
-            try:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-            except Exception:
+            release = fetch_latest_release(repo, token)
+            if not release or not release.get("tag"):
                 return
 
-            tag = data.get("tag_name", "")
-            remote = _parse_version(tag)
+            remote = _parse_version(release["tag"])
             local = _parse_version(__version__)
             if not remote or not local or not _is_newer(remote, local):
                 return
 
-            html_url = data.get("html_url") or f"https://github.com/{repo}/releases/latest"
-
             def _notify():
-                msg = f"Update available: {tag}\nCurrent version: {__version__}\n\nOpen the download page now?"
-                if messagebox.askyesno("Update Available", msg):
-                    try:
-                        webbrowser.open(html_url)
-                    except Exception:
-                        messagebox.showerror("Error", "Could not open the download page.")
+                show_update_dialog(release, token)
 
             root.after(0, _notify)
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def show_update_dialog(release, token):
+        win = tk.Toplevel(root)
+        win.title("Update Available")
+        win.geometry("520x420")
+        win.configure(bg=COLOR_BG)
+        win.grab_set()
+
+        header = ttk.Label(win, text=f"Update {release['tag']} available", style="Heading.TLabel")
+        header.pack(anchor="w", padx=BASE_PAD, pady=(BASE_PAD, BASE_PAD // 2))
+
+        ttk.Label(
+            win,
+            text=f"Current version: {__version__}",
+            style="App.TLabel",
+            foreground=COLOR_MUTED,
+        ).pack(anchor="w", padx=BASE_PAD, pady=(0, BASE_PAD))
+
+        ttk.Label(win, text="Release notes:", style="App.TLabel").pack(anchor="w", padx=BASE_PAD)
+        notes = tk.Text(win, height=10, bg=COLOR_LOG_BG, fg=COLOR_TEXT, wrap="word", relief="flat")
+        notes.pack(fill="both", expand=True, padx=BASE_PAD, pady=(4, BASE_PAD))
+        notes.insert("1.0", release.get("body") or "(No release notes provided)")
+        notes.config(state="disabled")
+
+        progress_var = tk.DoubleVar(value=0)
+        progress = ttk.Progressbar(win, variable=progress_var, maximum=100, mode="determinate", style="Blue.Horizontal.TProgressbar")
+        progress.pack(fill="x", padx=BASE_PAD, pady=(0, BASE_PAD))
+        progress.pack_forget()
+
+        status_var = tk.StringVar(value="")
+        status_label = ttk.Label(win, textvariable=status_var, style="App.TLabel", foreground=COLOR_MUTED)
+        status_label.pack(anchor="w", padx=BASE_PAD, pady=(0, BASE_PAD))
+        status_label.pack_forget()
+
+        btn_row = ttk.Frame(win, style="App.TFrame")
+        btn_row.pack(fill="x", padx=BASE_PAD, pady=(0, BASE_PAD))
+
+        def open_release_page():
+            try:
+                webbrowser.open(release.get("html_url", ""))
+            except Exception:
+                messagebox.showerror("Error", "Could not open the download page.")
+
+        def update_now():
+            if not getattr(sys, "frozen", False):
+                messagebox.showinfo("Update", "Auto-update is only available in the packaged app.")
+                open_release_page()
+                return
+
+            exe_path = Path(sys.executable).resolve()
+            target_dir = exe_path.parent
+            if not os.access(target_dir, os.W_OK):
+                messagebox.showerror("Update", "Update failed: app folder is not writable.")
+                return
+
+            download_url = release.get("download_url")
+            if not download_url:
+                messagebox.showinfo("Update", "No downloadable asset found. Opening release page.")
+                open_release_page()
+                return
+
+            btn_update.config(state="disabled")
+            btn_open.config(state="disabled")
+            btn_later.config(state="disabled")
+            status_var.set("Downloading update...")
+            status_label.pack(anchor="w", padx=BASE_PAD, pady=(0, BASE_PAD))
+            progress.pack(fill="x", padx=BASE_PAD, pady=(0, BASE_PAD))
+
+            tmp_path = target_dir / f"{exe_path.stem}.new"
+            pid = os.getpid()
+
+            def _progress(downloaded, total):
+                if total:
+                    percent = int((downloaded / total) * 100)
+                    progress_var.set(percent)
+
+            def _download_worker():
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                    download_file(download_url, tmp_path, token, on_progress=_progress)
+                except Exception as e:
+                    def _fail():
+                        status_var.set(f"Download failed: {e}")
+                        btn_open.config(state="normal")
+                        btn_later.config(state="normal")
+                    root.after(0, _fail)
+                    return
+
+                updater_path = target_dir / "update_app.cmd"
+                script = f"""@echo off
+set PID={pid}
+set NEW="{tmp_path}"
+set EXE="{exe_path}"
+:wait
+tasklist /FI "PID eq %PID%" | find /I "%PID%" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait
+)
+move /y %NEW% %EXE% >nul
+start "" %EXE%
+del "%~f0"
+"""
+                try:
+                    updater_path.write_text(script, encoding="utf-8")
+                except Exception as e:
+                    def _fail():
+                        status_var.set(f"Update failed: {e}")
+                        btn_open.config(state="normal")
+                        btn_later.config(state="normal")
+                    root.after(0, _fail)
+                    return
+
+                try:
+                    subprocess.Popen(
+                        ["cmd", "/c", str(updater_path)],
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    )
+                except Exception as e:
+                    def _fail():
+                        status_var.set(f"Update failed: {e}")
+                        btn_open.config(state="normal")
+                        btn_later.config(state="normal")
+                    root.after(0, _fail)
+                    return
+
+                root.after(0, root.destroy)
+
+            threading.Thread(target=_download_worker, daemon=True).start()
+
+        btn_update = ttk.Button(btn_row, text="Update Now", style="Accent.TButton", command=update_now)
+        btn_update.pack(side="right", padx=(BASE_PAD, 0))
+        btn_open = ttk.Button(btn_row, text="Open Release Page", style="TButton", command=open_release_page)
+        btn_open.pack(side="right", padx=(BASE_PAD, 0))
+        btn_later = ttk.Button(btn_row, text="Later", style="TButton", command=win.destroy)
+        btn_later.pack(side="right")
 
     outer = ttk.Frame(root, style="App.TFrame", padding=0)
     outer.pack(fill="both", expand=True)

@@ -66,6 +66,10 @@ The app can notify users when a newer release is available.
    $env:PSA_TOOL_GITHUB_TOKEN="your_token_here"
    ```
 
+Auto‑update behavior:
+- When an update is available, the app can download the new exe and replace itself.
+- Existing settings (`psa_tool_settings.json`) are kept because the update only swaps the exe file.
+
 ## Versioning and Release Checklist
 We use **Semantic Versioning**: `MAJOR.MINOR.PATCH`
 
