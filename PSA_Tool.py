@@ -7,6 +7,7 @@ import sys
 import urllib.request
 import urllib.error
 import webbrowser
+import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 import tkinter as tk
