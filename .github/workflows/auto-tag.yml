@@ -1,0 +1,51 @@
+name: Auto Tag From Version
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag if version changed
+        run: |
+          python - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          version_text = Path("version.py").read_text(encoding="utf-8")
+          match = re.search(r'__version__\s*=\s*"([^"]+)"', version_text)
+          if not match:
+            raise SystemExit("Could not find __version__ in version.py")
+          version = match.group(1).strip()
+          tag = f"v{version}"
+
+          try:
+            latest = subprocess.check_output(
+              ["git", "describe", "--tags", "--abbrev=0", "--match", "v*"],
+              text=True,
+            ).strip()
+          except subprocess.CalledProcessError:
+            latest = ""
+
+          existing = subprocess.check_output(["git", "tag", "-l", tag], text=True).strip()
+
+          if tag == latest or existing:
+            print(f"No new tag needed. Latest={latest or 'none'}")
+            raise SystemExit(0)
+
+          subprocess.check_call(["git", "tag", tag])
+          subprocess.check_call(["git", "push", "origin", tag])
+          print(f"Created and pushed tag {tag}")
+          PY

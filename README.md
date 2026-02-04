@@ -76,17 +76,13 @@ We use **Semantic Versioning**: `MAJOR.MINOR.PATCH`
 Release steps:
 1. Update `version.py` to the new version.
 2. Add an entry to `CHANGELOG.md`.
-3. Commit your changes:
+3. Commit and push:
    ```powershell
    git add -A
    git commit -m "Release v1.2.1"
+   git push
    ```
-4. Tag and push:
-   ```powershell
-   git tag v1.2.1
-   git push --follow-tags
-   ```
-5. GitHub Actions will build and publish the release automatically when you push the tag.
+4. GitHub Actions will **auto‑tag** based on `version.py`, then build and publish the release.
 
 ### Optional: Auto Bump Version + Changelog
 Use the helper script to bump versions and insert a new changelog section.
@@ -106,6 +102,7 @@ Skip changelog edits:
 ```powershell
 python scripts/bump_version.py patch --no-changelog
 ```
+
 
 ## Packaging (Optional)
 1. Install PyInstaller:

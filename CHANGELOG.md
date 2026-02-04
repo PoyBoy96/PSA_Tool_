@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.2
+- Patch release.
+
 ## 1.2.1
 - App now checks GitHub Releases for update notifications.
 

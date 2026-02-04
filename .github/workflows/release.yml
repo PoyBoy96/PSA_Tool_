@@ -29,7 +29,52 @@ jobs:
         run: |
           pyinstaller --clean PSA_Tool.spec
 
-      - name: Create GitHub Release
+      - name: Extract release notes
+        id: notes
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ.get("GITHUB_REF_NAME", "")
+          version = tag.lstrip("v")
+          changelog = Path("CHANGELOG.md")
+          output_path = os.environ["GITHUB_OUTPUT"]
+
+          if not changelog.exists() or not version:
+              with open(output_path, "a", encoding="utf-8") as f:
+                  f.write("has_notes=false\n")
+              raise SystemExit(0)
+
+          text = changelog.read_text(encoding="utf-8")
+          pattern = re.compile(rf"^##\\s+{re.escape(version)}\\s*$", re.MULTILINE)
+          match = pattern.search(text)
+          if not match:
+              with open(output_path, "a", encoding="utf-8") as f:
+                  f.write("has_notes=false\n")
+              raise SystemExit(0)
+
+          start = match.end()
+          next_match = re.search(r"^##\\s+", text[start:], re.MULTILINE)
+          end = start + next_match.start() if next_match else len(text)
+          body = text[start:end].strip()
+
+          with open(output_path, "a", encoding="utf-8") as f:
+              f.write("has_notes=true\n")
+              f.write("body<<EOF\n")
+              f.write(body + "\n")
+              f.write("EOF\n")
+
+      - name: Create GitHub Release (changelog notes)
+        if: steps.notes.outputs.has_notes == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PSA_Tool.exe
+          body: ${{ steps.notes.outputs.body }}
+
+      - name: Create GitHub Release (auto notes)
+        if: steps.notes.outputs.has_notes != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/PSA_Tool.exe
