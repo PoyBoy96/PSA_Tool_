@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.5
+- Improve in-app updater reliability and logging
+
 ## 1.2.4
 - In-app auto-update with release notes and in-place install
 
