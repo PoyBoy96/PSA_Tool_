@@ -72,8 +72,17 @@ def stitch_ms_files(dest: str, ordered_names: List[str], source: str, output_fil
         output_path,
     ]
 
+    creationflags = 0
+    if os.name == "nt":
+        creationflags = subprocess.CREATE_NO_WINDOW
+
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            creationflags=creationflags,
+        )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "ffmpeg failed")
     finally:

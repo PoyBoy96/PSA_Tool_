@@ -1,4 +1,5 @@
-import os
+import base64
+import io
 from pathlib import Path
 import tkinter as tk
 
@@ -60,5 +61,25 @@ def load_logo_image(root: tk.Tk, path_str: str):
             pass
     try:
         return tk.PhotoImage(master=root, data=LOGO_BASE64)
+    except Exception:
+        return None
+
+
+def load_logo_pil_image(path_str: str):
+    try:
+        from PIL import Image
+    except Exception:
+        return None
+
+    path = resolve_path(path_str)
+    if path.exists():
+        try:
+            return Image.open(path).convert("RGBA")
+        except Exception:
+            pass
+
+    try:
+        raw = base64.b64decode(LOGO_BASE64)
+        return Image.open(io.BytesIO(raw)).convert("RGBA")
     except Exception:
         return None

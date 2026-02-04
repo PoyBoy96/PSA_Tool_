@@ -1,11 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+import glob
 
 a = Analysis(
     ['PSA_Tool.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('animations\\logo_load_animation.json', 'animations'),
+        ('animations\\images\\img_0.png', 'animations\\images'),
+    ] + [
+        (src, 'animations\\Frames\\LoadLogoAnimimation')
+        for src in glob.glob('animations\\Frames\\LoadLogoAnimimation\\*.png')
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -29,7 +35,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
